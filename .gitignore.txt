@@ -1,0 +1,53 @@
+# === Node.js ============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# === Environment variables ==============
+.env
+.env.local
+.env.*.local
+
+# === Build / Dist =======================
+dist/
+build/
+.out/
+.next/
+.eslintcache
+
+# === Frontend (React / Vite) ============
+.vite/
+.vscode/
+.DS_Store
+.idea/
+cache/
+coverage/
+
+# === OS / System files ==================
+Thumbs.db
+*.tmp
+*.temp
+
+# === Backend (Node) =====================
+tmp/
+uploads/
+storage/
+*.pid
+*.seed
+*.bak
+
+# === TypeScript =========================
+*.tsbuildinfo
+
+# === JetBrains / DataGrip ===============
+.idea/
+*.iml
+
+# === Package managers ===================
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
