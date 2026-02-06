@@ -1,73 +1,111 @@
-import { ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+// src/components/ExpensesDonut.jsx
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { Link } from 'react-router-dom';
 
-export default function ExpensesDonut({ data }) {
+const formatCurrency = (v) =>
+  Number(v || 0).toLocaleString('es-ES', {
+    style: 'currency',
+    currency: 'EUR',
+  });
+
+function CustomTooltip({ active, payload }) {
+  if (!active || !payload || !payload.length) return null;
+  const item = payload[0];
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-col h-full">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-semibold text-gray-600">Gastos por tipo</span>
-        <span className="h-6 w-6 rounded-full bg-sky-50 text-sky-500 text-xs flex items-center justify-center">
-          ✈
-        </span>
+    <div className="bg-white shadow-md rounded px-3 py-2 text-xs border border-gray-100">
+      <div className="font-semibold text-gray-700 mb-1">
+        {item.name}
+      </div>
+      <div className="text-gray-600">
+        {formatCurrency(item.value)}
+      </div>
+    </div>
+  );
+}
+
+export default function ExpensesDonut({ data = [], year, bankId }) {
+  const total = data.reduce((sum, d) => sum + (d.value || 0), 0);
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm p-4 flex flex-col h-full">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">
+            Gastos por categoría
+          </h3>
+          <p className="text-xs text-gray-500">
+            Distribución de gastos
+          </p>
+        </div>
       </div>
 
-      <div className="flex flex-1 items-center gap-6">
-        {/* DONA MÁS GRUESA Y GRANDE */}
-        <div className="w-1/2 h-72">
+      <div className="flex-1 flex">
+        <div className="w-1/2 h-52">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
+              <Tooltip content={<CustomTooltip />} />
               <Pie
                 data={data}
                 dataKey="value"
                 nameKey="type"
-                innerRadius={50}   // donut gordito
-                outerRadius={115}  // bastante grande
-                paddingAngle={3}
-                strokeWidth={2}
+                innerRadius="50%"
+                outerRadius="88%"
+                paddingAngle={2}
               >
-                {data.map((item) => (
-                  <Cell key={item.type} fill={item.color} stroke="#fff" />
+                {data.map((entry, index) => (
+                  <Cell
+                    key={index}
+                    fill={entry.color || '#6366F1'}
+                    stroke="#ffffff"
+                    strokeWidth={2}
+                  />
                 ))}
               </Pie>
             </PieChart>
           </ResponsiveContainer>
         </div>
 
-        {/* LEYENDA CON ICONOS REACT COLOREADOS */}
-        <div className="w-1/2 space-y-3">
-          {data.map((e) => {
-            const Icon = e.icon; // componente de icono (Heroicon)
-
-            return (
-              <div
-                key={e.type}
-                className="flex items-center justify-between text-sm"
-              >
-                <div className="flex items-center space-x-3">
-                  {/* Fondo suave tomando el color del segmento */}
-                  <div
-                    className="flex items-center justify-center h-8 w-8 rounded-md"
-                    style={{ backgroundColor: e.color + '20' }} // color + transparencia
-                  >
-                    {/* Icono del mismo color que la dona */}
-                    <Icon
-                      className="h-4 w-4"
-                      style={{ color: e.color }}
+        <div className="w-1/2 pl-3 flex flex-col justify-between">
+          <div className="space-y-2 text-xs max-h-44 overflow-y-auto pr-1">
+            {data.map((item, idx) => {
+              const percent =
+                total > 0 ? ((item.value / total) * 100).toFixed(1) : 0;
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: item.color || '#6366F1' }}
                     />
+                    <span className="text-gray-700">{item.type}</span>
                   </div>
-
-                  <span className="text-gray-700">{e.type}</span>
+                  <div className="text-right">
+                    <div className="text-gray-900 font-semibold">
+                      {formatCurrency(item.value)}
+                    </div>
+                    <div className="text-[10px] text-gray-400">
+                      {percent}%
+                    </div>
+                  </div>
                 </div>
+              );
+            })}
+          </div>
 
-                <span className="font-medium text-gray-600">
-                  {e.value.toLocaleString('es-ES', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}{' '}
-                  €
-                </span>
-              </div>
-            );
-          })}
+          {/* Botón Ver detalle */}
+          {year && bankId && (
+            <div className="mt-3">
+              <Link
+                to={`/categorias?year=${year}&bankId=${bankId}`}
+                className="inline-flex items-center text-[11px] font-medium text-purple-600 hover:text-purple-800"
+              >
+                Ver detalle de categorías →
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

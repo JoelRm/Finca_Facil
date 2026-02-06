@@ -1,102 +1,147 @@
-import { useMemo } from 'react';
+// src/components/BalanceChart.jsx
 import {
-  ResponsiveContainer,
-  ComposedChart,
+  BarChart,
   Bar,
-  Line,
   XAxis,
   YAxis,
-  Tooltip,
   CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  Line,
 } from 'recharts';
 
-export default function BalanceChart({ data, subtitle }) {
-  // Calculamos el valor máximo entre ingresos, gastos y saldo
-  const { yDomain, yTicks } = useMemo(() => {
-    if (!data || data.length === 0) {
-      return { yDomain: [0, 10000], yTicks: [0, 5000, 10000] };
-    }
+const formatCurrencyShort = (value) => {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
+  if (value <= -1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value <= -1_000) return `${(value / 1_000).toFixed(0)}K`;
+  return value;
+};
 
-    let maxValue = 0;
-    data.forEach((d) => {
-      ['ingresos', 'gastos', 'saldo'].forEach((key) => {
-        if (typeof d[key] === 'number' && d[key] > maxValue) {
-          maxValue = d[key];
-        }
-      });
+function CustomTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+
+  const ingresos = payload.find(p => p.dataKey === 'ingresos');
+  const gastos = payload.find(p => p.dataKey === 'gastos');
+  const saldo = payload.find(p => p.dataKey === 'saldo');
+
+  const fmt = (v) =>
+    v.toLocaleString('es-ES', {
+      style: 'currency',
+      currency: 'EUR',
     });
 
-    // Redondear hacia arriba al múltiplo de 5000
-    const upper = Math.max(10000, Math.ceil(maxValue / 5000) * 5000);
+  return (
+    <div className="bg-white shadow-md rounded px-3 py-2 text-xs border border-gray-100">
+      <div className="font-semibold text-gray-700 mb-1">{label}</div>
+      {ingresos && (
+        <div className="text-emerald-600">
+          Ingresos: {fmt(ingresos.value || 0)}
+        </div>
+      )}
+      {gastos && (
+        <div className="text-rose-500">
+          Gastos: {fmt(gastos.value || 0)}
+        </div>
+      )}
+      {saldo && (
+        <div className="text-indigo-600">
+          Saldo: {fmt(saldo.value || 0)}
+        </div>
+      )}
+    </div>
+  );
+}
 
-    const ticks = [];
-    for (let t = 0; t <= upper; t += 5000) {
-      ticks.push(t);
-    }
+export default function BalanceChart({ data = [], subtitle }) {
+  // calcular máximo para que el eje Y sea razonable y las barras se vean
+  const maxValue = data.reduce(
+    (max, d) =>
+      Math.max(
+        max,
+        d.ingresos || 0,
+        d.gastos || 0,
+        d.saldo != null ? d.saldo : 0
+      ),
+    0
+  );
 
-    return { yDomain: [0, upper], yTicks: ticks };
-  }, [data]);
+  const yMax = maxValue > 0 ? maxValue * 1.2 : 10000; // 20% de margen
 
   return (
-    <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-semibold text-gray-700">Ingresos y Gastos</h2>
-        <span className="text-xs text-gray-400">{subtitle}</span>
+    <div className="bg-white rounded-2xl shadow-sm p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">
+            Ingresos y gastos
+          </h3>
+          {subtitle && (
+            <p className="text-xs text-gray-500">{subtitle}</p>
+          )}
+        </div>
       </div>
 
-      <div className="h-72">
+      <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart
+          <BarChart
             data={data}
-            // separa más las barras entre categorías
-            barCategoryGap={40}
-            barGap={10}
+            margin={{ top: 10, right: 20, left: 0, bottom: 0 }}
+            barSize={18}        // barras más gruesas
+            barGap={6}          // espacio entre ingresos y gastos
+            barCategoryGap={24} // espacio entre meses
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-
-            {/* EJE Y EN K (5K, 10K, 15K, ...) */}
+            <XAxis
+              dataKey="month"
+              tick={{ fontSize: 10 }}
+              tickMargin={8}
+              axisLine={false}
+            />
             <YAxis
-              domain={yDomain}
-              ticks={yTicks}
-              tick={{ fontSize: 11 }}
-              tickFormatter={(value) => `${value / 1000}K`}
+              domain={[0, yMax]}
+              tickFormatter={formatCurrencyShort}
+              tick={{ fontSize: 10 }}
+              axisLine={false}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend
+              verticalAlign="top"
+              height={24}
+              iconSize={8}
             />
 
-            <Tooltip
-              formatter={(value) =>
-                value.toLocaleString('es-ES', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                }) + ' €'
-              }
-            />
-
-            {/* Barras más delgadas */}
+            {/* Barras lado a lado, con colores específicos */}
             <Bar
               dataKey="ingresos"
-              fill="#10B981"
+              name="Ingresos"
+              fill="#22C55E"
               radius={[4, 4, 0, 0]}
-              barSize={30}
-            />
-            <Bar
-              dataKey="gastos"
-              fill="#FB7185"
-              radius={[4, 4, 0, 0]}
-              barSize={30}
+              z={5}                // 👈 z bajo
             />
 
+            <Bar
+              dataKey="gastos"
+              name="Gastos"
+              fill="#FB7185"
+              radius={[4, 4, 0, 0]}
+              z={5}                // 👈 z bajo
+            />
+
+            {/* Línea de saldo SIEMPRE por encima */}
             <Line
               type="monotone"
               dataKey="saldo"
-              stroke="#4F46E5"
-              strokeWidth={2.5}
+              name="Saldo"
+              stroke="#6366F1"
+              strokeWidth={3}
               dot={{ r: 3 }}
-              activeDot={{ r: 5 }}
+              activeDot={{ r: 4 }}
+              z={20}               // 👈 z alto, va sobre las barras
             />
-          </ComposedChart>
+          </BarChart>
         </ResponsiveContainer>
       </div>
-    </section>
+    </div>
   );
 }

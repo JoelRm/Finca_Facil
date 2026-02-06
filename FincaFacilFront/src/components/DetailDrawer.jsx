@@ -1,76 +1,91 @@
 // src/components/DetailDrawer.jsx
-import { XMarkIcon } from '@heroicons/react/24/outline';
+export default function DetailDrawer({ open, type, items = [], onClose }) {
+  const titles = {
+    pagos: 'Detalle de pagos',
+    cobros: 'Detalle de cobros',
+    saldos: 'Detalle de saldos',
+  };
 
-const TITLE_MAP = {
-  pagos: 'Detalle de pagos',
-  cobros: 'Detalle de cobros',
-  saldos: 'Detalle de saldos',
-};
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('es-ES');
+  };
 
-export default function DetailDrawer({ open, type, onClose, items = [] }) {
-  // para no mostrar nada si no hay tipo
-  const title = type ? TITLE_MAP[type] : '';
+  const formatAmount = (value) =>
+    Number(value || 0).toLocaleString('es-ES', {
+      style: 'currency',
+      currency: 'EUR',
+    });
+
+  if (!open) return null;
 
   return (
-    <div
-      className={`fixed inset-0 z-40 flex ${
-        open ? '' : 'pointer-events-none'
-      }`}
-    >
-      {/* Overlay */}
+    <div className="fixed inset-0 z-40 flex justify-end">
+      {/* fondo oscuro */}
       <div
-        className={`flex-1 bg-black/20 transition-opacity duration-300 ${
-          open ? 'opacity-100' : 'opacity-0'
-        }`}
+        className="flex-1 bg-black/30"
         onClick={onClose}
       />
 
-      {/* Panel derecho */}
-      <div
-        className={`ml-auto h-full w-full max-w-md bg-white shadow-xl border-l transform transition-transform duration-300 ${
-          open ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h2 className="text-sm font-semibold text-gray-800">{title}</h2>
+      {/* drawer */}
+      <div className="w-full max-w-md bg-white h-full shadow-xl flex flex-col animate-[slideIn_0.2s_ease-out_forwards]">
+        <div className="px-4 py-3 border-b flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900">
+            {titles[type] || 'Detalle'}
+          </h3>
           <button
             onClick={onClose}
-            className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500"
+            className="text-xs text-gray-500 hover:text-gray-700"
           >
-            <XMarkIcon className="h-5 w-5" />
+            Cerrar
           </button>
         </div>
 
-        <div className="p-4 space-y-2 text-sm">
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 text-xs">
           {items.length === 0 && (
-            <p className="text-gray-400">
-              Aquí podrás mostrar el detalle real de {type}.
+            <p className="text-gray-400 italic">
+              No hay movimientos para mostrar.
             </p>
           )}
 
-          {items.map((m) => (
+          {items.map((mov) => (
             <div
-              key={m.id}
-              className="border rounded-lg px-3 py-2 flex justify-between items-center"
+              key={mov.id}
+              className="border border-gray-100 rounded-xl px-3 py-2 flex justify-between"
             >
               <div>
-                <p className="font-medium text-gray-700">{m.description}</p>
-                <p className="text-xs text-gray-400">{m.date}</p>
+                <div className="font-medium text-gray-800 truncate max-w-[220px]">
+                  {mov.description}
+                </div>
+                <div className="text-gray-400">
+                  {formatDate(mov.movement_date)}
+                </div>
               </div>
-              <p
-                className={`font-semibold ${
-                  m.amount < 0 ? 'text-red-500' : 'text-emerald-600'
-                }`}
-              >
-                {m.amount.toLocaleString('es-ES', {
-                  style: 'currency',
-                  currency: 'EUR',
-                })}
-              </p>
+              <div className="text-right">
+                <div
+                  className={`font-semibold ${
+                    mov.amount < 0 ? 'text-red-500' : 'text-emerald-600'
+                  }`}
+                >
+                  {formatAmount(mov.amount)}
+                </div>
+                <div className="text-[10px] text-gray-400">
+                  Saldo: {formatAmount(mov.balance_after)}
+                </div>
+              </div>
             </div>
           ))}
         </div>
       </div>
+
+      {/* animación tailwind custom */}
+      <style>
+        {`@keyframes slideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }`}
+      </style>
     </div>
   );
 }

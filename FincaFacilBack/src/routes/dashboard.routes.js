@@ -1,18 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const dashboardController = require('../controllers/dashboard.controller');
 
-const controller = require('../controllers/dashboard.controller');
-
-router.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
-
-// ⛔ comenta todo lo demás
-router.get('/filtros', controller.getFiltros);
-router.get('/kpis', controller.getKpis);
-router.get('/categorias', controller.getCategorias);
-router.get('/evolucion', controller.getEvolucion);
-router.get('/gastos-por-categoria', controller.getGastosPorCategoria);
-// router.get('/detalle', controller.getDetalle);
-
+router.get('/filtros', dashboardController.getFiltros);
+router.get('/kpis', dashboardController.getKpis);
+router.get('/categorias', dashboardController.getCategorias);
+router.get('/evolucion', dashboardController.getEvolucion);
+router.get('/gastos-por-categoria', dashboardController.getGastosPorCategoria);
+router.get('/movimientos', dashboardController.getMovimientos);
+router.get('/bancos', dashboardController.getBancos);
 module.exports = router;
