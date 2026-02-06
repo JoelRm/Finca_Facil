@@ -8,6 +8,7 @@ import SaldosPanel from '../components/SaldosPanel';
 import ExpensesDonut from '../components/ExpensesDonut';
 import BankMovementsTable from '../components/BankMovementsTable';
 import DetailDrawer from '../components/DetailDrawer';
+import UserMenu from "../components/UserMenu";
 
 import {
   getFiltros,
@@ -290,9 +291,7 @@ export default function Dashboard() {
               onChange={setSelectedYear}
             />
 
-            <div className="h-9 w-9 rounded-full bg-purple-600 text-white flex items-center justify-center text-sm font-semibold">
-              A
-            </div>
+            <UserMenu />
           </div>
         </header>
 

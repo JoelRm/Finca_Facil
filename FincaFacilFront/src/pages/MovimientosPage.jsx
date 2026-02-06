@@ -3,6 +3,8 @@ import { useEffect, useState, useMemo } from 'react';
 import Sidebar from '../components/Sidebar';
 import YearFilter from '../components/YearFilter';
 import BankMovementsTable from '../components/BankMovementsTable';
+import UserMenu from "../components/UserMenu";
+
 import {
   getFiltros,
   getMovimientos,
@@ -172,7 +174,7 @@ export default function Movimientos() {
               onChange={setSelectedYear}
             />
           </div>
-
+          <UserMenu />
           </div>
         </header>
 

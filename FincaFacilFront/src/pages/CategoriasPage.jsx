@@ -5,6 +5,7 @@ import Sidebar from '../components/Sidebar';
 import YearFilter from '../components/YearFilter';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { getCategorias, getMovimientos, getFiltros } from '../api/dashboard';
+import UserMenu from "../components/UserMenu";
 
 const formatCurrency = (v) =>
   Number(v || 0).toLocaleString('es-ES', {
@@ -252,66 +253,75 @@ const chartData = categorias.map((c, idx) => ({
       <div className="flex-1 flex flex-col">
         {/* TOP BAR */}
         <header className="px-6 py-3 bg-white border-b flex justify-between items-center">
-          <div>
-            <h1 className="text-sm font-semibold text-gray-900">
-              Análisis por Categorías
-            </h1>
-            <p className="text-xs text-gray-500">
-              {selectedYear
-                ? `Año ${selectedYear}${
-                    selectedBankName ? ` · ${selectedBankName}` : ''
-                  }`
-                : 'Selecciona año y banco'}
-            </p>
-          </div>
+  {/* IZQUIERDA: título + subtítulo + volver */}
+  <div>
+    <h1 className="text-sm font-semibold text-gray-900">
+      Análisis por Categorías
+    </h1>
+    <p className="text-xs text-gray-500">
+      {selectedYear
+        ? `Año ${selectedYear}${
+            selectedBankName ? ` · ${selectedBankName}` : ''
+          }`
+        : 'Selecciona año y banco'}
+    </p>
 
-          <div className="flex items-center gap-4">
-            {/* Filtro banco */}
-            <div className="flex flex-col">
-              <label className="text-[10px] uppercase text-gray-400 mb-1">
-                Cuenta / banco
-              </label>
-              <select
-                value={selectedBankId}
-                onChange={handleBankChange}
-                className="h-9 min-w-[160px] rounded-full border border-gray-200 text-xs px-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
-              >
-                {accountsData.length === 0 && (
-                  <option value="">Sin cuentas</option>
-                )}
-                {accountsData.map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.bank}{' '}
-                    {acc.accountNumber ? `· ${acc.accountNumber}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+    {/* Link de volver, más discreto bajo el subtítulo */}
+    <div className="mt-1">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-purple-600 hover:text-purple-800"
+      >
+        <span>←</span>
+        <span>Volver al dashboard</span>
+      </Link>
+    </div>
+  </div>
 
-            {/* Filtro año */}
-            <div className="flex flex-col">
-              <label className="text-[10px] uppercase text-gray-400 mb-1">
-                Año
-              </label>
-              <YearFilter
-                value={selectedYear}
-                options={years}
-                onChange={(y) => {
-                  setSelectedYear(y);
-                  setExpanded({});
-                }}
-              />
-            </div>
+  {/* DERECHA: filtros + usuario */}
+  <div className="flex items-center gap-4">
+    {/* Filtro banco */}
+    <div className="flex flex-col">
+      <label className="text-[10px] uppercase text-gray-400 mb-1">
+        Cuenta / banco
+      </label>
+      <select
+        value={selectedBankId}
+        onChange={handleBankChange}
+        className="h-9 min-w-[160px] rounded-full border border-gray-200 text-xs px-3 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+      >
+        {accountsData.length === 0 && (
+          <option value="">Sin cuentas</option>
+        )}
+        {accountsData.map((acc) => (
+          <option key={acc.id} value={acc.id}>
+            {acc.bank}{' '}
+            {acc.accountNumber ? `· ${acc.accountNumber}` : ''}
+          </option>
+        ))}
+      </select>
+    </div>
 
-            {/* Volver al dashboard */}
-            <Link
-              to="/"
-              className="text-xs font-medium text-purple-600 hover:text-purple-800"
-            >
-              ← Volver al dashboard
-            </Link>
-          </div>
-        </header>
+    {/* Filtro año */}
+    <div className="flex flex-col">
+      <label className="text-[10px] uppercase text-gray-400 mb-1">
+        Año
+      </label>
+      <YearFilter
+        value={selectedYear}
+        options={years}
+        onChange={(y) => {
+          setSelectedYear(y);
+          setExpanded({});
+        }}
+      />
+    </div>
+
+    {/* Menú de usuario */}
+    <UserMenu />
+  </div>
+</header>
+
 
         {/* CONTENIDO */}
         <main className="flex-1 overflow-y-auto px-6 py-5">

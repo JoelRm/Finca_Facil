@@ -1,16 +1,60 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
+import Movimientos from './pages/MovimientosPage';
 import CategoriasPage from './pages/CategoriasPage';
-import MovimientosPage from './pages/MovimientosPage';
+import Login from './pages/Login';
+import ProtectedRoute from './components/ProtectedRoute';
+import { AuthProvider } from './context/AuthContext';
 
-export default function App() {
+function App() {
   return (
-    <Router>
+    <AuthProvider>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/movimientos" element={<MovimientosPage />} />
-        <Route path="/categorias" element={<CategoriasPage />} />
+        {/* Pública */}
+        <Route path="/login" element={<Login />} />
+
+        {/* Privadas */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/movimientos"
+          element={
+            <ProtectedRoute>
+              <Movimientos />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/categorias"
+          element={
+            <ProtectedRoute>
+              <CategoriasPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Si quieres que /ajustes sea privada también */}
+        {/* 
+        <Route
+          path="/ajustes"
+          element={
+            <ProtectedRoute>
+              <AjustesPage />
+            </ProtectedRoute>
+          }
+        /> 
+        */}
       </Routes>
-    </Router>
+    </AuthProvider>
   );
 }
+
+export default App;
