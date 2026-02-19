@@ -1,14 +1,13 @@
-// config/db.js
-require('dotenv').config();
 const { Pool } = require('pg');
+const env = require('./env');
 
 const pool = new Pool({
-  host: process.env.PGHOST || 'localhost',
-  port: Number(process.env.PGPORT) || 5432,
-  user: process.env.PGUSER || 'joelrm',
-  // si no hay password, lo dejamos undefined
-  password: process.env.PGPASSWORD || undefined,
-  database: process.env.PGDATABASE || 'fincafacildb',
+  host: env.PGHOST,
+  port: env.PGPORT,
+  user: env.PGUSER,
+  password: env.PGPASSWORD,
+  database: env.PGDATABASE,
+  ssl: env.PGSSL ? { rejectUnauthorized: false } : false,
 });
 
 module.exports = pool;

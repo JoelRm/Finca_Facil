@@ -1,12 +1,12 @@
-const express = require('express');
-const router = express.Router();
-const dashboardController = require('../controllers/dashboard.controller');
+const router = require('express').Router();
+const c = require('./../dashboard/dashboard.controller');
 
-router.get('/filtros', dashboardController.getFiltros);
-router.get('/kpis', dashboardController.getKpis);
-router.get('/categorias', dashboardController.getCategorias);
-router.get('/evolucion', dashboardController.getEvolucion);
-router.get('/gastos-por-categoria', dashboardController.getGastosPorCategoria);
-router.get('/movimientos', dashboardController.getMovimientos);
-router.get('/bancos', dashboardController.getBancos);
+router.get('/filtros', c.getFiltros);
+router.get('/kpis', c.getKpis);
+router.get('/categorias', c.getCategorias);
+router.get('/evolucion', c.getEvolucion);
+router.get('/gastos-por-categoria', c.getGastosPorCategoria);
+router.get('/movimientos', c.getMovimientos);
+router.get('/bancos', c.getBancos);
+
 module.exports = router;

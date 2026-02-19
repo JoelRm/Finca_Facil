@@ -5,20 +5,28 @@ import CategoriasPage from './pages/CategoriasPage';
 import Login from './pages/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
+import OwnersGridPage from './pages/OwnersGridPage';
 
 function App() {
   return (
     <AuthProvider>
       <Routes>
-        {/* Pública */}
         <Route path="/login" element={<Login />} />
 
-        {/* Privadas */}
         <Route
           path="/"
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/owners-grid"
+          element={
+            <ProtectedRoute>
+              <OwnersGridPage />
             </ProtectedRoute>
           }
         />

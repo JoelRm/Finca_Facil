@@ -9,6 +9,9 @@ import ExpensesDonut from '../components/ExpensesDonut';
 import BankMovementsTable from '../components/BankMovementsTable';
 import DetailDrawer from '../components/DetailDrawer';
 import UserMenu from "../components/UserMenu";
+import MorosidadCard from '../components/MorosidadCard';
+import { getCommunityMorosidad } from '../api/owners';
+import { useNavigate } from "react-router-dom";
 
 import {
   getFiltros,
@@ -35,6 +38,7 @@ const MONTH_LABELS = [
 
 export default function Dashboard() {
   // filtros
+  const navigate = useNavigate();
   const [years, setYears] = useState([]);
   const [selectedYear, setSelectedYear] = useState(null);
 
@@ -45,6 +49,7 @@ export default function Dashboard() {
   const [accountsData, setAccountsData] = useState([]);
   const [selectedBankId, setSelectedBankId] = useState(null);
   const [selectedBankName, setSelectedBankName] = useState(null);
+  const [morosidad, setMorosidad] = useState({ percent: 0, expected: 0, paidApplied: 0, mora: 0 });
 
   // datos
   const [kpis, setKpis] = useState({ ingresos: 0, egresos: 0, saldo: 0 });
@@ -56,6 +61,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [error, setError] = useState(null);
+
+  const [gridOpen, setGridOpen] = useState(false);
+  const [gridLoading, setGridLoading] = useState(false);
+  const [gridError, setGridError] = useState(null);
+  const [gridData, setGridData] = useState(null);
+
+  const communityId = 7; // TODO: luego lo sacas de auth / selector
 
   // subtítulo del gráfico
   const subtitle = useMemo(() => {
@@ -116,16 +128,22 @@ export default function Dashboard() {
         setLoadingDashboard(true);
         setError(null);
 
-        // pedimos todo el año completo (mes = null)
-        const [kpisRes, evolucionRes, categoriasRes, movimientosRes] =
+        const [kpisRes, evolucionRes, categoriasRes, movimientosRes, morosidadRes] =
           await Promise.all([
             getKpis(selectedYear, null, selectedBankId),
             getEvolucion(selectedYear, selectedBankId),
             getCategorias(selectedYear, null, selectedBankId),
-            // 👇 aquí corregimos el orden de parámetros
-            // getMovimientos(anio, bancoId, categoriaId, tipo, limit, offset)
             getMovimientos(selectedYear, selectedBankId, null, null, 50, 0),
+            getCommunityMorosidad(communityId, selectedYear, 12),
           ]);
+
+        // ✅ set morosidad AQUÍ (dentro del try)
+        setMorosidad({
+          percent: Number(morosidadRes?.percent ?? 0),
+          expected: Number(morosidadRes?.expected ?? 0),
+          paidApplied: Number(morosidadRes?.paidApplied ?? 0),
+          mora: Number(morosidadRes?.mora ?? 0),
+        });
 
         // KPIs
         setKpis({
@@ -134,11 +152,11 @@ export default function Dashboard() {
           saldo: kpisRes.saldo ?? 0,
         });
 
-        // Gráfico de barras + línea (ingresos, gastos, saldo acumulado)
+        // Evolución
         const evoChart = evolucionRes.chart || evolucionRes || [];
         let runningSaldo = 0;
         const mappedBalance = evoChart.map((row) => {
-          const m = row.mes; // 1..12
+          const m = row.mes;
           const label =
             m >= 1 && m <= 12
               ? `${MONTH_LABELS[m - 1]} ${String(selectedYear).slice(-2)}`
@@ -148,25 +166,14 @@ export default function Dashboard() {
           const gastos = Number(row.gastos || 0);
           runningSaldo += ingresos - gastos;
 
-          return {
-            month: label,
-            ingresos,
-            gastos,
-            saldo: runningSaldo,
-          };
+          return { month: label, ingresos, gastos, saldo: runningSaldo };
         });
         setBalanceData(mappedBalance);
 
-        // Dona – categorías
+        // Categorías
         const palette = [
-          '#6366F1',
-          '#EC4899',
-          '#22C55E',
-          '#FACC15',
-          '#F97316',
-          '#3B82F6',
-          '#0EA5E9',
-          '#A855F7',
+          '#6366F1','#EC4899','#22C55E','#FACC15',
+          '#F97316','#3B82F6','#0EA5E9','#A855F7',
         ];
         const mappedCategories = (categoriasRes || []).map((c, idx) => ({
           type: c.nombre_categoria,
@@ -175,7 +182,7 @@ export default function Dashboard() {
         }));
         setCategoriesData(mappedCategories);
 
-        // Movimientos (últimos N)
+        // Movimientos
         setMovements(movimientosRes || []);
       } catch (err) {
         console.error('Error cargando dashboard:', err);
@@ -315,7 +322,7 @@ export default function Dashboard() {
           <section className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {/* IZQUIERDA: KPIs + saldos */}
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <KPICard
                   title="Pagos"
                   value={formatCurrency(kpis.egresos)}
@@ -333,6 +340,19 @@ export default function Dashboard() {
                     style: { backgroundColor: '#ECFDF5', color: '#10B981' },
                   }}
                   onSeeMore={() => openDetail('cobros')}
+                />
+                 <MorosidadCard
+                  percent={morosidad.percent}
+                  onAdd={() => {
+                    navigate("/owners-grid", {
+                      state: {
+                        communityId,
+                        anio: selectedYear,
+                        hastaMes: 12,
+                        bankId: selectedBankId,
+                      },
+                    });
+                  }}
                 />
               </div>
 
