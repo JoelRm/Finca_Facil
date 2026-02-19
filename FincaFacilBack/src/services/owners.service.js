@@ -279,6 +279,7 @@ exports.getCommunityOwnersMonthly = async ({ communityId, anio, bankId, hastaMes
     };
   });
 
+  // 5) Ingresos sin identificar = positivos NO asignados
   const un = await db.query(`
     SELECT
       EXTRACT(MONTH FROM bm.movement_date)::int AS mes,
@@ -362,6 +363,7 @@ exports.getCommunityMorosidad = async ({ communityId, anio, hastaMes = 12, bankI
       AND (po.end_date IS NULL OR po.end_date >= make_date($1, 1, 1));
   `, [anio, communityId]);
 
+  // 3) pagos asignados (todas las cuentas)
   const pay = await db.query(`
     SELECT
       bmc.client_id,
@@ -383,6 +385,7 @@ exports.getCommunityMorosidad = async ({ communityId, anio, hastaMes = 12, bankI
     paymentsByClient.set(r.client_id, arr);
   }
 
+  // 4) sumar morosidad global
   let expected = 0;
   let paidApplied = 0;
   let mora = 0;

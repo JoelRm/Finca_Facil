@@ -136,6 +136,7 @@ exports.matchPayment = async ({ movementId, clientId, communityId }) => {
     throw err;
   }
 
+  // 4) insertar asignación (no duplica)
   const ins = await db.query(`
     INSERT INTO bank_movement_client (movement_id, client_id, assigned_by, assigned_at)
     VALUES ($1, $2, 'manual', now())
@@ -150,6 +151,7 @@ exports.matchPayment = async ({ movementId, clientId, communityId }) => {
   return { ok: true, ...ins.rows[0] };
 };
 
+// ✅ Movimientos positivos SIN asignar (para hacer click-match)
 exports.getUnassignedIncomesByCommunity = async ({ communityId, anio }) => {
   const r = await db.query(`
     SELECT
@@ -195,6 +197,7 @@ function extractTransferName(desc) {
 }
 
 exports.autoAssignTransfers = async ({ anio, bankId }) => {
+  // 1) Traer movimientos positivos NO asignados del año/banco
   const mov = await db.query(`
     SELECT bm.id, bm.description
     FROM bank_movement bm
@@ -218,11 +221,13 @@ exports.autoAssignTransfers = async ({ anio, bankId }) => {
     const key = normKey(raw);
     if (!key) { ignored++; continue; }
 
+    // 2) buscar cliente por norm_key
     const cli = await db.query(`SELECT id FROM client WHERE norm_key = $1 LIMIT 1`, [key]);
     if (!cli.rows.length) { notFound++; continue; }
 
     const clientId = cli.rows[0].id;
 
+    // 3) insertar asignación (idempotente)
     const ins = await db.query(`
       INSERT INTO bank_movement_client (movement_id, client_id, assigned_by, assigned_at)
       VALUES ($1, $2, 'auto', now())
