@@ -1,5 +1,5 @@
 // src/api/ownersMonthly.js
-const BASE_URL = "http://localhost:3000/api";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
 function getAuthFromStorage() {
   try {
@@ -36,7 +36,7 @@ export async function getCommunityOwnersMonthly(communityId, anio, hastaMes = 12
 
   if (bankId) qs.append("bankId", String(bankId));
 
-  const r = await fetch(`${BASE_URL}/communities/${communityId}/owners/monthly?${qs.toString()}`, {
+  const r = await fetch(`${API_BASE}/communities/${communityId}/owners/monthly?${qs.toString()}`, {
     method: "GET",
     headers: buildHeaders(),
   });
@@ -59,7 +59,7 @@ export async function allocateUnidentifiedPayment({
   clientId,
   delta,
 }) {
-  const r = await fetch(`${BASE_URL}/payments/unidentified/allocate`, {
+  const r = await fetch(`${API_BASE}/payments/unidentified/allocate`, {
     method: "PUT",
     headers: buildHeaders(),
     body: JSON.stringify({

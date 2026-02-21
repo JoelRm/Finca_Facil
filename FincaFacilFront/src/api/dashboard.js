@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
 function getStoredAuth() {
   try {
@@ -40,7 +40,7 @@ const handleResponse = async (res) => {
 // helper fetch con headers
 function apiFetch(path, options = {}) {
   const headers = buildAuthHeaders(options.headers || {});
-  return fetch(`${API_URL}${path}`, { ...options, headers }).then(handleResponse);
+  return fetch(`${API_BASE}${path}`, { ...options, headers }).then(handleResponse);
 }
 
 // GET /api/filtros

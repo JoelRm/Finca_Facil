@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:3000/api";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
 function getAuthFromStorage() {
   try {
@@ -27,7 +27,7 @@ export async function getCommunityMorosidad(communityId, anio, hastaMes = 12) {
   });
 
   const r = await fetch(
-    `${BASE_URL}/communities/${communityId}/morosidad?${qs.toString()}`,
+    `${API_BASE}/communities/${communityId}/morosidad?${qs.toString()}`,
     {
       method: "GET",
       headers: buildHeaders(),
