@@ -9,15 +9,18 @@ import {
   UserGroupIcon,
 } from '@heroicons/react/24/outline';
 import { NavLink } from 'react-router-dom';
+import logo from "../assets/logo.png";
 
 export default function Sidebar() {
   return (
     <aside className="w-20 bg-white border-r flex flex-col items-center py-4 space-y-6">
-      {/* logo circular con degradado (puedes convertirlo en link al dashboard si quieres) */}
-      <div className="h-10 w-10 rounded-full bg-gradient-to-tr from-pink-400 via-orange-300 to-yellow-300" />
-
+      <img
+        src={logo}
+        alt="Finca Fácil"
+        className="h-14 w-14 rounded-full object-contain bg-white p-1 shadow border border-gray-200"
+      />
       {/* menú de iconos */}
-      <nav className="flex-1 flex flex-col items-center space-y-4 mt-4">
+      <nav className="flex-1 flex flex-col items-center space-y-6 mt-">
         {/* Dashboard */}
         <NavLink
           to="/"
@@ -34,7 +37,6 @@ export default function Sidebar() {
           <Square3Stack3DIcon className="h-6 w-6" />
         </NavLink>
 
-        {/* Categorías (dona) */}
         <NavLink
           to="/categorias"
           className={({ isActive }) =>

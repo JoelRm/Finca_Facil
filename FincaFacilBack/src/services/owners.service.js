@@ -1,4 +1,5 @@
 const db = require('../repository/db.repository');
+const { assertBankAccountInCommunity } = require('../repository/community.repository');
 
 function applyFIFO(monthlyFee, payments) {
   const months = Array.from({ length: 12 }, (_, i) => ({
@@ -40,7 +41,8 @@ function applyFIFO(monthlyFee, payments) {
   return { months, totalDue, totalPaidApplied, balance };
 }
 
-exports.getMonthlyGrid = async ({ anio, bankId }) => {
+exports.getMonthlyGrid = async ({ anio, bankId, communityId }) => {
+  await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
   const base = await db.query(`
     SELECT
       p.id AS property_id,
@@ -188,34 +190,7 @@ function applyFIFOWithDates(monthlyFee, payments, hastaMes = 12) {
   return { months, totals: { expected, paidApplied, mora, moraMonths } };
 }
 
-exports.getCommunityOwnersMonthly = async ({ communityId, anio, bankId, hastaMes = 12 }) => {
-
-  const banksRes = await db.query(`
-    SELECT id
-    FROM bank_account
-    WHERE community_id = $1
-    ORDER BY id;
-  `, [communityId]);
-
-  const communityBankIds = banksRes.rows.map(r => Number(r.id));
-
-  if (!communityBankIds.length) {
-    const err = new Error('La comunidad no tiene cuentas bancarias registradas');
-    err.statusCode = 400;
-    throw err;
-  }
-
-  let usedBankIds = communityBankIds;
-
-  if (bankId) {
-    if (!communityBankIds.includes(Number(bankId))) {
-      const err = new Error('bankId no pertenece a la comunidad indicada');
-      err.statusCode = 400;
-      throw err;
-    }
-    usedBankIds = [Number(bankId)];
-  }
-
+exports.getCommunityOwnersMonthly = async ({ communityId, anio, hastaMes = 12 }) => {
   const base = await db.query(`
     SELECT
       p.id AS property_id,
@@ -250,12 +225,13 @@ exports.getCommunityOwnersMonthly = async ({ communityId, anio, bankId, hastaMes
       bm.amount::numeric(12,2) AS amount
     FROM bank_movement_client bmc
     JOIN bank_movement bm ON bm.id = bmc.movement_id
-    WHERE bm.bank_account_id = ANY($1::bigint[])
-      AND bm.movement_date >= make_date($2, 1, 1)
-      AND bm.movement_date <  make_date($2 + 1, 1, 1)
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
+    WHERE ba.community_id = $2::bigint
+      AND bm.movement_date >= make_date($1, 1, 1)
+      AND bm.movement_date <  make_date($1 + 1, 1, 1)
       AND bm.amount > 0
     ORDER BY bmc.client_id, bm.movement_date ASC, bm.id ASC;
-  `, [usedBankIds, anio]);
+  `, [anio, communityId]);
 
   const paymentsByClient = new Map();
   for (const r of pay.rows) {
@@ -264,10 +240,54 @@ exports.getCommunityOwnersMonthly = async ({ communityId, anio, bankId, hastaMes
     paymentsByClient.set(r.client_id, arr);
   }
 
+  const alloc = await db.query(`
+    SELECT client_id, target_mes, SUM(amount)::numeric(12,2) AS amount
+    FROM unidentified_allocation
+    WHERE community_id = $1::bigint
+      AND anio = $2::int
+      AND amount > 0
+    GROUP BY client_id, target_mes
+    ORDER BY client_id, target_mes;
+  `, [communityId, anio]);
+
+  const allocByClient = new Map();
+  for (const r of alloc.rows) {
+    const client = Number(r.client_id);
+    const mes = Number(r.target_mes);
+    const amt = Number(r.amount);
+
+    const m = allocByClient.get(client) || new Map();
+    m.set(mes, Number(((m.get(mes) || 0) + amt).toFixed(2)));
+    allocByClient.set(client, m);
+  }
+
   const clients = base.rows.map(x => {
     const monthlyFee = Number(x.monthly_fee);
     const payments = paymentsByClient.get(x.client_id) || [];
+
     const fifo = applyFIFOWithDates(monthlyFee, payments, hastaMes);
+
+    const extraMap = allocByClient.get(Number(x.client_id));
+    if (extraMap) {
+      for (const [mes, amt] of extraMap.entries()) {
+        if (mes >= 1 && mes <= fifo.months.length) {
+          const mm = fifo.months[mes - 1];
+          mm.paid = Number((Number(mm.paid) + amt).toFixed(2));
+          mm.paymentDates = Array.from(new Set([...(mm.paymentDates || []), `POOL-${anio}-${String(mes).padStart(2,'0')}`]));
+        }
+      }
+    }
+
+    for (const m of fifo.months) {
+      if (m.paid < m.due) m.status = 'less';
+      else if (m.paid === m.due) m.status = 'ok';
+      else m.status = 'more';
+    }
+
+    const expected = monthlyFee * fifo.months.length;
+    const paidApplied = fifo.months.reduce((a, mm) => a + Number(mm.paid || 0), 0);
+    const mora = fifo.months.reduce((a, mm) => a + Math.max(0, Number(mm.due) - Number(mm.paid)), 0);
+    const moraMonths = fifo.months.reduce((a, mm) => a + (Number(mm.paid) < Number(mm.due) ? 1 : 0), 0);
 
     return {
       clientId: x.client_id,
@@ -275,40 +295,71 @@ exports.getCommunityOwnersMonthly = async ({ communityId, anio, bankId, hastaMes
       property: { id: x.property_id, code: x.property_code },
       monthlyFee,
       months: fifo.months,
-      totals: fifo.totals
+      totals: {
+        expected: Number(expected.toFixed(2)),
+        paidApplied: Number(paidApplied.toFixed(2)),
+        mora: Number(mora.toFixed(2)),
+        moraMonths
+      }
     };
   });
 
-  // 5) Ingresos sin identificar = positivos NO asignados
-  const un = await db.query(`
+  const pool = await db.query(`
+    WITH base AS (
+      SELECT
+        EXTRACT(MONTH FROM bm.movement_date)::int AS mes,
+        SUM(bm.amount)::numeric(12,2) AS base_total
+      FROM bank_movement bm
+      JOIN bank_account ba ON ba.id = bm.bank_account_id
+      LEFT JOIN bank_movement_client bmc ON bmc.movement_id = bm.id
+      WHERE ba.community_id = $2::bigint
+        AND bm.amount > 0
+        AND bmc.movement_id IS NULL
+        AND bm.movement_date >= make_date($1, 1, 1)
+        AND bm.movement_date <  make_date($1 + 1, 1, 1)
+      GROUP BY mes
+    ),
+    used AS (
+      SELECT
+        source_mes AS mes,
+        SUM(amount)::numeric(12,2) AS used_total
+      FROM unidentified_allocation
+      WHERE community_id = $2::bigint
+        AND anio = $1::int
+        AND amount > 0
+      GROUP BY source_mes
+    )
     SELECT
-      EXTRACT(MONTH FROM bm.movement_date)::int AS mes,
-      SUM(bm.amount)::numeric(12,2) AS total
-    FROM bank_movement bm
-    LEFT JOIN bank_movement_client bmc ON bmc.movement_id = bm.id
-    WHERE bm.bank_account_id = ANY($1::bigint[])
-      AND bm.movement_date >= make_date($2, 1, 1)
-      AND bm.movement_date <  make_date($2 + 1, 1, 1)
-      AND bm.amount > 0
-      AND bmc.movement_id IS NULL
-    GROUP BY mes
-    ORDER BY mes;
-  `, [usedBankIds, anio]);
+      m.mes,
+      COALESCE(b.base_total, 0)::numeric(12,2) AS total,
+      COALESCE(u.used_total, 0)::numeric(12,2) AS used,
+      (COALESCE(b.base_total, 0) - COALESCE(u.used_total, 0))::numeric(12,2) AS available
+    FROM (SELECT generate_series(1,12)::int AS mes) m
+    LEFT JOIN base b ON b.mes = m.mes
+    LEFT JOIN used u ON u.mes = m.mes
+    ORDER BY m.mes;
+  `, [anio, communityId]);
 
-  const unidentifiedMonths = un.rows.map(r => ({ mes: r.mes, total: Number(r.total) }));
-  const unidentifiedTotal = unidentifiedMonths.reduce((a, x) => a + x.total, 0);
+  const months = pool.rows.map(r => ({
+    mes: Number(r.mes),
+    total: Number(Number(r.total).toFixed(2)),
+    used: Number(Number(r.used).toFixed(2)),
+    available: Number(Number(r.available).toFixed(2)),
+    status: Number(r.available) > 0 ? 'ok' : 'less',
+    paymentDates: []
+  }));
+
+  const totalAvailable = Number(months.reduce((a, x) => a + (x.available || 0), 0).toFixed(2));
 
   return {
     communityId,
     anio,
     hastaMes,
-    bankScope: bankId ? 'single' : 'all',
-    usedBankIds,
     clients,
     unidentified: {
       label: 'INGRESOS SIN IDENTIFICAR',
-      months: unidentifiedMonths,
-      total: unidentifiedTotal
+      months,
+      total: totalAvailable
     }
   };
 };
@@ -363,7 +414,6 @@ exports.getCommunityMorosidad = async ({ communityId, anio, hastaMes = 12, bankI
       AND (po.end_date IS NULL OR po.end_date >= make_date($1, 1, 1));
   `, [anio, communityId]);
 
-  // 3) pagos asignados (todas las cuentas)
   const pay = await db.query(`
     SELECT
       bmc.client_id,
@@ -385,7 +435,6 @@ exports.getCommunityMorosidad = async ({ communityId, anio, hastaMes = 12, bankI
     paymentsByClient.set(r.client_id, arr);
   }
 
-  // 4) sumar morosidad global
   let expected = 0;
   let paidApplied = 0;
   let mora = 0;
@@ -414,4 +463,3 @@ exports.getCommunityMorosidad = async ({ communityId, anio, hastaMes = 12, bankI
     percent
   };
 };
-

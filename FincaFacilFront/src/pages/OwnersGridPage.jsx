@@ -2,10 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import Sidebar from "../components/Sidebar";
+import { getCommunityOwnersMonthly, allocateUnidentifiedPayment } from "../api/ownersMonthly";
 
-import { getCommunityOwnersMonthly } from "../api/ownersMonthly";
-
-import { Home, Settings, ThumbsUp, ThumbsDown, ArrowLeft } from "lucide-react";
+import { Home, Settings, ThumbsUp, ThumbsDown, ArrowLeft, X } from "lucide-react";
 
 const MONTHS = [
   "ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
@@ -17,7 +16,8 @@ function euro(n) {
   return v.toLocaleString("es-ES", {
     style: "currency",
     currency: "EUR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 
@@ -75,6 +75,109 @@ function TotalThumb({ type = "up", amount }) {
 }
 
 /* =========================
+   MODAL ASIGNACIÓN
+   ========================= */
+
+function AllocateModal({
+  open,
+  onClose,
+  onSubmit,
+  loading,
+  error,
+  info,
+}) {
+  const [delta, setDelta] = useState("");
+
+  useEffect(() => {
+    if (open) setDelta("");
+  }, [open]);
+
+  if (!open) return null;
+
+  const monthLabel = info?.targetMes ? MONTHS[info.targetMes - 1] : "";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-lg border border-gray-100 p-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-sm font-bold text-indigo-900 uppercase">
+              Asignar pago
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Cliente: <span className="font-semibold">{info?.clientName}</span>
+              {" · "}
+              Propiedad: <span className="font-semibold">{info?.propertyCode}</span>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Mes objetivo: <span className="font-semibold">{monthLabel}</span>
+              {" · "}
+              Mes origen (no identificado): <span className="font-semibold">{MONTHS[(info?.sourceMes || 1) - 1]}</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 w-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200"
+            title="Cerrar"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <label className="block text-[11px] font-medium text-gray-600 mb-1">
+            Monto a asignar
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={delta}
+            onChange={(e) => setDelta(e.target.value)}
+            className="w-full h-10 rounded-xl border border-gray-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/60 focus:border-transparent"
+            placeholder="Ej: 50"
+          />
+
+          <div className="mt-2 text-[11px] text-gray-500">
+            Esto <b>resta</b> del no identificado del mes origen y <b>suma</b> al pago del cliente en el mes objetivo.
+          </div>
+
+          {error && (
+            <div className="mt-3 text-[11px] text-red-600 bg-red-50 border border-red-100 rounded px-2 py-1.5">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 px-4 rounded-xl bg-gray-100 text-gray-700 text-xs font-semibold hover:bg-gray-200"
+            disabled={loading}
+          >
+            Cancelar
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSubmit(delta)}
+            disabled={loading || !delta || Number(delta) <= 0}
+            className="h-9 px-4 rounded-xl bg-indigo-900 text-white text-xs font-semibold hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? "Asignando..." : "Asignar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================
    PAGE
    ========================= */
 
@@ -92,23 +195,28 @@ export default function OwnersGridPage() {
   const [grid, setGrid] = useState(null);
   const [error, setError] = useState(null);
 
+  // modal state
+  const [allocOpen, setAllocOpen] = useState(false);
+  const [allocLoading, setAllocLoading] = useState(false);
+  const [allocError, setAllocError] = useState(null);
+  const [allocInfo, setAllocInfo] = useState(null);
+
   const months = useMemo(() => {
     const h = Math.max(1, Math.min(12, Number(hastaMes || 12)));
     return MONTHS.slice(0, h);
   }, [hastaMes]);
+
+  const refresh = async () => {
+    const data = await getCommunityOwnersMonthly(communityId, selectedYear, hastaMes, bankId);
+    setGrid(data);
+  };
 
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await getCommunityOwnersMonthly(
-          communityId,
-          selectedYear,
-          hastaMes,
-          bankId
-        );
-        setGrid(data);
+        await refresh();
       } catch (e) {
         console.error(e);
         setError(e?.message || "Error cargando grilla");
@@ -117,6 +225,7 @@ export default function OwnersGridPage() {
       }
     };
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communityId, selectedYear, hastaMes, bankId]);
 
   const clients = grid?.clients || [];
@@ -126,6 +235,57 @@ export default function OwnersGridPage() {
   const LEFT_COL = "200px";
   const MONTH_COL = "minmax(70px,1fr)";
   const TOTAL_COL = "130px";
+
+  // ✅ al hacer click en una celda (cliente/mes) abrimos el modal
+  const openAllocate = (client, targetMes) => {
+    setAllocError(null);
+    setAllocInfo({
+      communityId,
+      anio: selectedYear,
+      sourceMes: targetMes, // por defecto igual (puedes cambiarlo si luego quieres UI)
+      targetMes,
+      clientId: Number(client.clientId),
+      clientName: client.clientName,
+      propertyCode: client.property?.code,
+      monthlyFee: Number(client.monthlyFee || 0),
+      due: Number(client.months?.[targetMes - 1]?.due || client.monthlyFee || 0),
+      paid: Number(client.months?.[targetMes - 1]?.paid || 0),
+    });
+    setAllocOpen(true);
+  };
+
+  const submitAllocate = async (deltaStr) => {
+    try {
+      setAllocLoading(true);
+      setAllocError(null);
+
+      const delta = Number(deltaStr);
+      if (!Number.isFinite(delta) || delta <= 0) {
+        setAllocError("Ingresa un monto válido");
+        return;
+      }
+
+      // ✅ Enviamos al backend
+      await allocateUnidentifiedPayment({
+        communityId: allocInfo.communityId,
+        anio: allocInfo.anio,
+        sourceMes: allocInfo.sourceMes,
+        targetMes: allocInfo.targetMes,
+        clientId: allocInfo.clientId,
+        delta,
+      });
+
+      // ✅ REFRESH obligatorio de la lista
+      await refresh();
+
+      setAllocOpen(false);
+    } catch (e) {
+      console.error(e);
+      setAllocError(e?.message || "No se pudo asignar el monto");
+    } finally {
+      setAllocLoading(false);
+    }
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 text-gray-800">
@@ -149,7 +309,6 @@ export default function OwnersGridPage() {
           {/* HEADER SUPERIOR */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-4">
-              {/* Icono decorativo (NO navega) */}
               <div className="h-12 w-12 rounded-full bg-indigo-900 flex items-center justify-center text-white">
                 <Home size={24} />
               </div>
@@ -209,10 +368,7 @@ export default function OwnersGridPage() {
               {/* filas */}
               <div className="grid gap-4">
                 {clients.map((c) => {
-                  const totalPaid = (c.months || []).reduce(
-                    (a, x) => a + Number(x.paid || 0),
-                    0
-                  );
+                  const totalPaid = (c.months || []).reduce((a, x) => a + Number(x.paid || 0), 0);
 
                   return (
                     <div
@@ -232,23 +388,26 @@ export default function OwnersGridPage() {
                         </div>
                       </div>
 
-                      {/* MONTHS */}
+                      {/* MONTHS (click para asignar) */}
                       {months.map((_, idx) => {
                         const m = c.months?.[idx];
                         const paid = Number(m?.paid || 0);
                         const s = statusStyles(m?.status);
 
                         return (
-                          <div
+                          <button
                             key={idx}
-                            className={`rounded-xl ${s.wrap} p-3 flex items-center justify-center`}
+                            type="button"
+                            onClick={() => openAllocate(c, idx + 1)}
+                            className={`rounded-xl ${s.wrap} p-3 flex items-center justify-center hover:opacity-90 transition`}
+                            title="Click para asignar desde No Identificado"
                           >
                             {paid > 0 ? (
                               <Bubble>{euro(paid)}</Bubble>
                             ) : (
                               <span className="text-gray-400 text-lg">—</span>
                             )}
-                          </div>
+                          </button>
                         );
                       })}
 
@@ -257,7 +416,7 @@ export default function OwnersGridPage() {
                   );
                 })}
 
-                {/* SIN IDENTIFICAR */}
+                {/* SIN IDENTIFICAR (por mes) */}
                 {unidentified && (
                   <div
                     className="grid gap-3"
@@ -274,14 +433,31 @@ export default function OwnersGridPage() {
                       </div>
                     </div>
 
-                    {months.map((_, idx) => (
-                      <div
-                        key={idx}
-                        className="rounded-xl bg-gray-100 p-3 flex items-center justify-center"
-                      >
-                        —
-                      </div>
-                    ))}
+                    {months.map((_, idx) => {
+                      const um = unidentified?.months?.[idx];
+                      const available = Number(um?.available ?? um?.total ?? 0);
+                      const used = Number(um?.used ?? 0);
+
+                      return (
+                        <div
+                          key={idx}
+                          className="rounded-xl bg-gray-100 p-3 flex flex-col items-center justify-center"
+                          title="Disponible (resta cuando asignas)"
+                        >
+                          {available > 0 ? (
+                            <Bubble>{euro(available)}</Bubble>
+                          ) : (
+                            <span className="text-gray-400 text-lg">—</span>
+                          )}
+
+                          {used > 0 && (
+                            <div className="mt-1 text-[10px] text-gray-500">
+                              usado: {euro(used)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
 
                     <TotalThumb type="down" amount={euro(unidentified.total)} />
                   </div>
@@ -301,10 +477,7 @@ export default function OwnersGridPage() {
             <div className="lg:hidden">
               <div className="grid gap-4">
                 {clients.map((c) => {
-                  const totalPaid = (c.months || []).reduce(
-                    (a, x) => a + Number(x.paid || 0),
-                    0
-                  );
+                  const totalPaid = (c.months || []).reduce((a, x) => a + Number(x.paid || 0), 0);
 
                   return (
                     <div
@@ -327,7 +500,13 @@ export default function OwnersGridPage() {
                           const s = statusStyles(m?.status);
 
                           return (
-                            <div key={idx} className={`rounded-xl ${s.wrap} p-3`}>
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => openAllocate(c, idx + 1)}
+                              className={`rounded-xl ${s.wrap} p-3 text-left hover:opacity-90 transition`}
+                              title="Tap para asignar desde No Identificado"
+                            >
                               <div className="text-xs font-bold text-gray-700">{label}</div>
                               <div className="mt-2">
                                 {paid > 0 ? (
@@ -336,7 +515,7 @@ export default function OwnersGridPage() {
                                   <span className="text-gray-400 text-lg">—</span>
                                 )}
                               </div>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>
@@ -348,6 +527,7 @@ export default function OwnersGridPage() {
                   );
                 })}
 
+                {/* SIN IDENTIFICAR (MOBILE) */}
                 {unidentified && (
                   <div className="rounded-2xl border border-gray-200 bg-white p-4">
                     <div className="rounded-xl bg-red-600 text-white p-3">
@@ -360,12 +540,30 @@ export default function OwnersGridPage() {
                     </div>
 
                     <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {months.map((label, idx) => (
-                        <div key={idx} className="rounded-xl bg-gray-100 p-3">
-                          <div className="text-xs font-bold text-gray-700">{label}</div>
-                          <div className="mt-2 text-gray-400 text-lg">—</div>
-                        </div>
-                      ))}
+                      {months.map((label, idx) => {
+                        const um = unidentified?.months?.[idx];
+                        const available = Number(um?.available ?? um?.total ?? 0);
+                        const used = Number(um?.used ?? 0);
+
+                        return (
+                          <div key={idx} className="rounded-xl bg-gray-100 p-3">
+                            <div className="text-xs font-bold text-gray-700">{label}</div>
+                            <div className="mt-2">
+                              {available > 0 ? (
+                                <Bubble>{euro(available)}</Bubble>
+                              ) : (
+                                <span className="text-gray-400 text-lg">—</span>
+                              )}
+                            </div>
+
+                            {used > 0 && (
+                              <div className="mt-1 text-[10px] text-gray-500">
+                                usado: {euro(used)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
 
                     <div className="mt-4">
@@ -382,6 +580,16 @@ export default function OwnersGridPage() {
               </div>
             </div>
           )}
+
+          {/* ✅ MODAL */}
+          <AllocateModal
+            open={allocOpen}
+            onClose={() => setAllocOpen(false)}
+            onSubmit={submitAllocate}
+            loading={allocLoading}
+            error={allocError}
+            info={allocInfo}
+          />
         </main>
       </div>
     </div>

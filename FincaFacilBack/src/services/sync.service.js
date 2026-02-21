@@ -1,4 +1,5 @@
 const db = require('../repository/db.repository');
+const { assertBankAccountInCommunity } = require('../repository/community.repository');
 
 function normalizeKey(s) {
   if (!s) return null;
@@ -17,17 +18,21 @@ function extractNameFromDescription(desc) {
   return d.replace(/^TRANSFERENCIA\s+/, '').trim() || null;
 }
 
-exports.detectClientsFromTransfers = async ({ anio, bankId }) => {
+exports.detectClientsFromTransfers = async ({ anio, bankId, communityId }) => {
+  await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
   const mov = await db.query(`
-    SELECT id, description
-    FROM bank_movement
-    WHERE bank_account_id = $1
-      AND movement_date >= make_date($2, 1, 1)
-      AND movement_date <  make_date($2 + 1, 1, 1)
-      AND amount > 0
-      AND upper(description) LIKE 'TRANSFERENCIA%'
-    ORDER BY movement_date ASC, id ASC;
-  `, [bankId, anio]);
+    SELECT bm.id, bm.description
+    FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
+    WHERE bm.bank_account_id = $1
+      AND ba.community_id = $3
+      AND bm.movement_date >= make_date($2, 1, 1)
+      AND bm.movement_date <  make_date($2 + 1, 1, 1)
+      AND bm.amount > 0
+      AND upper(bm.description) LIKE 'TRANSFERENCIA%'
+    ORDER BY bm.movement_date ASC, bm.id ASC;
+  `, [bankId, anio, communityId]);
 
   let created = 0;
   let existing = 0;
@@ -50,10 +55,5 @@ exports.detectClientsFromTransfers = async ({ anio, bankId }) => {
     else existing++;
   }
 
-  return {
-    scanned: mov.rowCount,
-    created,
-    existing,
-    ignored,
-  };
+  return { scanned: mov.rowCount, created, existing, ignored };
 };

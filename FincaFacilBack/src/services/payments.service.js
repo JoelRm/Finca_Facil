@@ -1,44 +1,60 @@
 const db = require('../repository/db.repository');
+const { assertBankAccountInCommunity } = require('../repository/community.repository');
 
-exports.autoAssign = async ({ anio, bankId }) => {
+exports.autoAssign = async ({ anio, bankId, communityId }) => {
+  await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
   const sql = `
     INSERT INTO bank_movement_client (movement_id, client_id, assigned_by, assigned_at)
     SELECT bm.id, m.client_id, 'auto', now()
     FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     JOIN client_payment_matcher m
       ON m.is_active = true
      AND upper(bm.description) LIKE '%' || upper(m.match_text) || '%'
     LEFT JOIN bank_movement_client bmc ON bmc.movement_id = bm.id
     WHERE bmc.movement_id IS NULL
       AND bm.bank_account_id = $1
+      AND ba.community_id = $3
       AND bm.movement_date >= make_date($2, 1, 1)
       AND bm.movement_date <  make_date($2 + 1, 1, 1)
       AND bm.amount > 0
     RETURNING movement_id;
   `;
 
-  const r = await db.query(sql, [bankId, anio]);
-
-  const assigned = r.rowCount;
+  const r = await db.query(sql, [bankId, anio, communityId]);
 
   const pending = await db.query(`
     SELECT COUNT(*)::int AS unassigned
     FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     LEFT JOIN bank_movement_client bmc ON bmc.movement_id = bm.id
     WHERE bmc.movement_id IS NULL
       AND bm.bank_account_id = $1
+      AND ba.community_id = $3
       AND bm.movement_date >= make_date($2, 1, 1)
       AND bm.movement_date <  make_date($2 + 1, 1, 1)
       AND bm.amount > 0;
-  `, [bankId, anio]);
+  `, [bankId, anio, communityId]);
 
-  return {
-    assigned,
-    unassigned: pending.rows[0]?.unassigned ?? 0,
-  };
+  return { assigned: r.rowCount, unassigned: pending.rows[0]?.unassigned ?? 0 };
 };
 
-exports.assignManual = async ({ movementId, clientId }) => {
+exports.assignManual = async ({ movementId, clientId, communityId }) => {
+  const mv = await db.query(`
+    SELECT bm.id
+    FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
+    WHERE bm.id = $1 AND ba.community_id = $2
+    LIMIT 1;
+  `, [movementId, communityId]);
+
+  if (!mv.rows.length) {
+    const err = new Error('Movimiento no pertenece a la comunidad');
+    err.statusCode = 403;
+    throw err;
+  }
+
   const r = await db.query(`
     INSERT INTO bank_movement_client (movement_id, client_id, assigned_by, assigned_at)
     VALUES ($1, $2, 'manual', now())
@@ -52,7 +68,9 @@ exports.assignManual = async ({ movementId, clientId }) => {
   return { ok: true, assignment: r.rows[0] };
 };
 
-exports.getUnassigned = async ({ anio, bankId }) => {
+exports.getUnassigned = async ({ anio, bankId, communityId }) => {
+  await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
   const rows = await db.query(`
     SELECT
       bm.id,
@@ -62,29 +80,33 @@ exports.getUnassigned = async ({ anio, bankId }) => {
       bm.reference2,
       bm.amount
     FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     LEFT JOIN bank_movement_client bmc ON bmc.movement_id = bm.id
     WHERE bmc.movement_id IS NULL
       AND bm.bank_account_id = $1
+      AND ba.community_id = $3
       AND bm.movement_date >= make_date($2, 1, 1)
       AND bm.movement_date <  make_date($2 + 1, 1, 1)
       AND bm.amount > 0
     ORDER BY bm.movement_date DESC, bm.id DESC;
-  `, [bankId, anio]);
+  `, [bankId, anio, communityId]);
 
   const summary = await db.query(`
     SELECT
       EXTRACT(MONTH FROM bm.movement_date)::int AS mes,
       SUM(bm.amount)::numeric(12,2) AS total
     FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     LEFT JOIN bank_movement_client bmc ON bmc.movement_id = bm.id
     WHERE bmc.movement_id IS NULL
       AND bm.bank_account_id = $1
+      AND ba.community_id = $3
       AND bm.movement_date >= make_date($2, 1, 1)
       AND bm.movement_date <  make_date($2 + 1, 1, 1)
       AND bm.amount > 0
     GROUP BY mes
     ORDER BY mes;
-  `, [bankId, anio]);
+  `, [bankId, anio, communityId]);
 
   const total = summary.rows.reduce((acc, x) => acc + Number(x.total), 0);
 
@@ -100,6 +122,35 @@ exports.getUnassigned = async ({ anio, bankId }) => {
     months: summary.rows.map(x => ({ mes: x.mes, total: Number(x.total) })),
     total,
   };
+};
+
+exports.getTransferIncomes = async ({ anio, bankId, communityId, limit = 500, offset = 0 }) => {
+  await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
+  const r = await db.query(`
+    SELECT
+      bm.id,
+      bm.movement_date,
+      bm.description,
+      bm.amount
+    FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
+    WHERE bm.bank_account_id = $1
+      AND ba.community_id = $2
+      AND bm.movement_date >= make_date($3, 1, 1)
+      AND bm.movement_date <  make_date($3 + 1, 1, 1)
+      AND bm.amount > 0
+      AND upper(bm.description) LIKE 'TRANSFERENCIA%'
+    ORDER BY bm.movement_date DESC, bm.id DESC
+    LIMIT $4 OFFSET $5;
+  `, [bankId, communityId, anio, limit, offset]);
+
+  return r.rows.map(x => ({
+    id: x.id,
+    movement_date: x.movement_date,
+    description: x.description,
+    amount: Number(x.amount),
+  }));
 };
 
 exports.matchPayment = async ({ movementId, clientId, communityId }) => {
@@ -125,7 +176,7 @@ exports.matchPayment = async ({ movementId, clientId, communityId }) => {
 
   if (communityId && Number(row.community_id) !== Number(communityId)) {
     const err = new Error('El movimiento no pertenece a la comunidad enviada');
-    err.statusCode = 400;
+    err.statusCode = 403;
     throw err;
   }
 
@@ -136,7 +187,6 @@ exports.matchPayment = async ({ movementId, clientId, communityId }) => {
     throw err;
   }
 
-  // 4) insertar asignación (no duplica)
   const ins = await db.query(`
     INSERT INTO bank_movement_client (movement_id, client_id, assigned_by, assigned_at)
     VALUES ($1, $2, 'manual', now())
@@ -151,7 +201,6 @@ exports.matchPayment = async ({ movementId, clientId, communityId }) => {
   return { ok: true, ...ins.rows[0] };
 };
 
-// ✅ Movimientos positivos SIN asignar (para hacer click-match)
 exports.getUnassignedIncomesByCommunity = async ({ communityId, anio }) => {
   const r = await db.query(`
     SELECT
@@ -196,19 +245,22 @@ function extractTransferName(desc) {
   return d.replace(/^TRANSFERENCIA\s+/i, '').trim() || null;
 }
 
-exports.autoAssignTransfers = async ({ anio, bankId }) => {
-  // 1) Traer movimientos positivos NO asignados del año/banco
+exports.autoAssignTransfers = async ({ anio, bankId, communityId }) => {
+  await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
   const mov = await db.query(`
     SELECT bm.id, bm.description
     FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     LEFT JOIN bank_movement_client bmc ON bmc.movement_id = bm.id
     WHERE bmc.movement_id IS NULL
       AND bm.bank_account_id = $1
+      AND ba.community_id = $3
       AND bm.movement_date >= make_date($2, 1, 1)
       AND bm.movement_date <  make_date($2 + 1, 1, 1)
       AND bm.amount > 0
     ORDER BY bm.movement_date ASC, bm.id ASC;
-  `, [bankId, anio]);
+  `, [bankId, anio, communityId]);
 
   let assigned = 0;
   let ignored = 0;
@@ -221,13 +273,20 @@ exports.autoAssignTransfers = async ({ anio, bankId }) => {
     const key = normKey(raw);
     if (!key) { ignored++; continue; }
 
-    // 2) buscar cliente por norm_key
-    const cli = await db.query(`SELECT id FROM client WHERE norm_key = $1 LIMIT 1`, [key]);
+    const cli = await db.query(`
+      SELECT c.id
+      FROM client c
+      JOIN property_owner po ON po.client_id = c.id AND po.end_date IS NULL
+      JOIN property p ON p.id = po.property_id
+      WHERE p.community_id = $2
+        AND c.norm_key = $1
+      LIMIT 1;
+    `, [key, communityId]);
+
     if (!cli.rows.length) { notFound++; continue; }
 
     const clientId = cli.rows[0].id;
 
-    // 3) insertar asignación (idempotente)
     const ins = await db.query(`
       INSERT INTO bank_movement_client (movement_id, client_id, assigned_by, assigned_at)
       VALUES ($1, $2, 'auto', now())
@@ -243,6 +302,92 @@ exports.autoAssignTransfers = async ({ anio, bankId }) => {
     scanned: mov.rowCount,
     assigned,
     ignored,
+
     notFound
   };
+};
+
+exports.applyUnidentifiedAmount = async ({ communityId, movementId, clientId, amount }) => {
+  return db.tx(async (c) => {
+    const mv = await c.query(`
+      SELECT
+        bm.id,
+        bm.amount::numeric(12,2) AS amount,
+        bm.movement_date::date   AS movement_date,
+        ba.community_id
+      FROM bank_movement bm
+      JOIN bank_account ba ON ba.id = bm.bank_account_id
+      WHERE bm.id = $1::bigint
+      LIMIT 1;
+    `, [movementId]);
+
+    if (!mv.rows.length) {
+      const err = new Error('Movimiento no existe');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const row = mv.rows[0];
+
+    if (Number(row.community_id) !== Number(communityId)) {
+      const err = new Error('Movimiento no pertenece a la comunidad');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    if (Number(row.amount) <= 0) {
+      const err = new Error('Solo se pueden usar ingresos (amount > 0)');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const cli = await c.query(`SELECT id FROM client WHERE id = $1::bigint LIMIT 1`, [clientId]);
+    if (!cli.rows.length) {
+      const err = new Error('clientId no existe');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const y = Number(String(row.movement_date).slice(0, 4));
+    const m = Number(String(row.movement_date).slice(5, 7));
+
+    await c.query(`SELECT id FROM bank_movement WHERE id = $1::bigint FOR UPDATE`, [movementId]);
+
+    const used = await c.query(`
+      SELECT COALESCE(SUM(amount), 0)::numeric(12,2) AS used
+      FROM bank_movement_split
+      WHERE source_movement_id = $1::bigint;
+    `, [movementId]);
+
+    const usedAmount = Number(used.rows[0].used || 0);
+    const totalAmount = Number(row.amount);
+    const remaining = Number((totalAmount - usedAmount).toFixed(2));
+
+    if (amount > remaining) {
+      const err = new Error(`Monto excede disponible. Disponible: ${remaining}`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const ins = await c.query(`
+      INSERT INTO bank_movement_split (community_id, source_movement_id, client_id, amount, assigned_by, assigned_at)
+      VALUES ($1::bigint, $2::bigint, $3::bigint, $4::numeric(12,2), 'manual_split', now())
+      RETURNING id;
+    `, [communityId, movementId, clientId, amount]);
+
+    const remainingAfter = Number((remaining - amount).toFixed(2));
+
+    return {
+      ok: true,
+      splitId: String(ins.rows[0].id),
+      communityId,
+      movementId,
+      clientId,
+      amount,
+      movementDate: String(row.movement_date),
+      year: y,
+      month: m,
+      remainingAfter
+    };
+  });
 };

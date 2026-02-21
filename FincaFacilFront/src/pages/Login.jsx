@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import logo from "../assets/logo.png";
 
 export default function Login() {
   const { login } = useAuth();
@@ -35,10 +36,13 @@ export default function Login() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         {/* logo */}
-        <div className="flex justify-center mb-4">
-          <div className="h-12 w-12 rounded-full bg-gradient-to-tr from-pink-400 via-orange-300 to-yellow-300" />
-        </div>
-
+    <div className="flex justify-center mb-4">
+  <img
+    src={logo}
+    alt="Finca Fácil"
+    className="w-24 h-24 rounded-full object-contain bg-white p-2 shadow border border-gray-200"
+  />
+</div>
         <h1 className="text-center text-sm font-semibold text-gray-900">
           Finca Fácil
         </h1>
@@ -95,6 +99,13 @@ export default function Login() {
           <br />
           (mock de autenticación local).
         </p>
+        <button
+          type="button"
+          onClick={() => navigate('/register')}
+          className="mt-3 w-full h-9 rounded-xl border border-gray-200 text-xs font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Crear cuenta
+        </button>
       </div>
     </div>
   );

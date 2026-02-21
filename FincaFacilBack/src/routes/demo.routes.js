@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const c = require('../demo/demo.controller');
 
-router.post('/demo/bootstrap', c.bootstrapDemo);
+router.post('/demo/assign-bank', c.assignBankAndSeedDemo);
 
 module.exports = router;

@@ -1,6 +1,7 @@
 const db = require('../repository/db.repository');
+const { assertBankAccountInCommunity } = require('../repository/community.repository');
 
-function buildYearWhere({ anio, mes, bankId }, alias = '') {
+function buildYearWhere({ anio, mes, bankId, communityId }, alias = '') {
   const p = alias ? `${alias}.` : '';
   const where = [
     `${p}movement_date >= make_date($1, 1, 1)`,
@@ -9,26 +10,30 @@ function buildYearWhere({ anio, mes, bankId }, alias = '') {
   const params = [anio];
   let idx = 2;
 
+  where.push(`ba.community_id = $${idx++}`);
+  params.push(communityId);
+
   if (mes) {
-    where.push(`EXTRACT(MONTH FROM ${p}movement_date) = $${idx}`);
+    where.push(`EXTRACT(MONTH FROM ${p}movement_date) = $${idx++}`);
     params.push(mes);
-    idx++;
   }
 
   if (bankId) {
-    where.push(`${p}bank_account_id = $${idx}`);
+    where.push(`${p}bank_account_id = $${idx++}`);
     params.push(bankId);
-    idx++;
   }
 
   return { where, params };
 }
 
-exports.getFiltros = async () => {
+exports.getFiltros = async ({ communityId }) => {
   const aniosRes = await db.query(
-    `SELECT DISTINCT EXTRACT(YEAR FROM movement_date)::int AS anio
-     FROM bank_movement
-     ORDER BY anio DESC`
+    `SELECT DISTINCT EXTRACT(YEAR FROM bm.movement_date)::int AS anio
+     FROM bank_movement bm
+     JOIN bank_account ba ON ba.id = bm.bank_account_id
+     WHERE ba.community_id = $1
+     ORDER BY anio DESC`,
+    [communityId]
   );
 
   const bancosRes = await db.query(`
@@ -45,8 +50,9 @@ exports.getFiltros = async () => {
         LIMIT 1
       ), 0) AS saldo_actual
     FROM bank_account ba
+    WHERE ba.community_id = $1
     ORDER BY ba.alias;
-  `);
+  `, [communityId]);
 
   return {
     anios: aniosRes.rows.map(r => r.anio),
@@ -54,24 +60,28 @@ exports.getFiltros = async () => {
   };
 };
 
-exports.getKpis = async ({ anio, mes, bankId }) => {
-  const { where, params } = buildYearWhere({ anio, mes, bankId });
+exports.getKpis = async ({ anio, mes, bankId, communityId }) => {
+  if (bankId) await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
+  const { where, params } = buildYearWhere({ anio, mes, bankId, communityId }, 'bm');
 
   const kpiQuery = `
     SELECT
-      COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS ingresos,
-      COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS egresos
-    FROM bank_movement
+      COALESCE(SUM(CASE WHEN bm.amount > 0 THEN bm.amount ELSE 0 END), 0) AS ingresos,
+      COALESCE(SUM(CASE WHEN bm.amount < 0 THEN -bm.amount ELSE 0 END), 0) AS egresos
+    FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     WHERE ${where.join(' AND ')};
   `;
   const kpiRes = await db.query(kpiQuery, params);
   const kpi = kpiRes.rows[0] || { ingresos: 0, egresos: 0 };
 
   const saldoQuery = `
-    SELECT balance_after
-    FROM bank_movement
+    SELECT bm.balance_after
+    FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     WHERE ${where.join(' AND ')}
-    ORDER BY movement_date DESC, id DESC
+    ORDER BY bm.movement_date DESC, bm.id DESC
     LIMIT 1;
   `;
   const saldoRes = await db.query(saldoQuery, params);
@@ -84,8 +94,10 @@ exports.getKpis = async ({ anio, mes, bankId }) => {
   };
 };
 
-exports.getCategorias = async ({ anio, mes, bankId }) => {
-  const { where, params } = buildYearWhere({ anio, mes, bankId }, 'bm');
+exports.getCategorias = async ({ anio, mes, bankId, communityId }) => {
+  if (bankId) await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
+  const { where, params } = buildYearWhere({ anio, mes, bankId, communityId }, 'bm');
   where.push('bm.amount < 0');
 
   const query = `
@@ -94,6 +106,7 @@ exports.getCategorias = async ({ anio, mes, bankId }) => {
       c.name          AS nombre_categoria,
       SUM(-bm.amount) AS total
     FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     JOIN movement_category mc ON mc.movement_id = bm.id
     JOIN category c           ON c.id = mc.category_id
     WHERE ${where.join(' AND ')}
@@ -110,15 +123,18 @@ exports.getCategorias = async ({ anio, mes, bankId }) => {
   }));
 };
 
-exports.getEvolucion = async ({ anio, bankId }) => {
-  const { where, params } = buildYearWhere({ anio, bankId });
+exports.getEvolucion = async ({ anio, bankId, communityId }) => {
+  if (bankId) await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
+  const { where, params } = buildYearWhere({ anio, bankId, communityId }, 'bm');
 
   const mensualQuery = `
     SELECT
-      EXTRACT(MONTH FROM movement_date)::int             AS mes,
-      SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END)   AS ingresos,
-      SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END)  AS gastos
-    FROM bank_movement
+      EXTRACT(MONTH FROM bm.movement_date)::int             AS mes,
+      SUM(CASE WHEN bm.amount > 0 THEN bm.amount ELSE 0 END)   AS ingresos,
+      SUM(CASE WHEN bm.amount < 0 THEN -bm.amount ELSE 0 END)  AS gastos
+    FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     WHERE ${where.join(' AND ')}
     GROUP BY mes
     ORDER BY mes;
@@ -134,9 +150,10 @@ exports.getEvolucion = async ({ anio, bankId }) => {
   const totalQuery = `
     WITH totales AS (
       SELECT
-        SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END)  AS ingresos,
-        SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END) AS gastos
-      FROM bank_movement
+        SUM(CASE WHEN bm.amount > 0 THEN bm.amount ELSE 0 END)  AS ingresos,
+        SUM(CASE WHEN bm.amount < 0 THEN -bm.amount ELSE 0 END) AS gastos
+      FROM bank_movement bm
+      JOIN bank_account ba ON ba.id = bm.bank_account_id
       WHERE ${where.join(' AND ')}
     )
     SELECT
@@ -164,14 +181,17 @@ exports.getEvolucion = async ({ anio, bankId }) => {
   };
 };
 
-exports.getGastosPorCategoria = async ({ anio, mes, bankId }) => {
-  const params = [anio, mes];
-  let idx = 3;
+exports.getGastosPorCategoria = async ({ anio, mes, bankId, communityId }) => {
+  if (bankId) await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
+  const params = [anio, mes, communityId];
+  let idx = 4;
 
   const where = [
     'bm.movement_date >= make_date($1, $2, 1)',
     `bm.movement_date <  (make_date($1, $2, 1) + INTERVAL '1 month')`,
     'bm.amount < 0',
+    'ba.community_id = $3',
   ];
 
   if (bankId) {
@@ -184,6 +204,7 @@ exports.getGastosPorCategoria = async ({ anio, mes, bankId }) => {
       c.name AS nombre_categoria,
       SUM(-bm.amount) AS total
     FROM bank_movement bm
+    JOIN bank_account ba ON ba.id = bm.bank_account_id
     JOIN movement_category mc ON mc.movement_id = bm.id
     JOIN category c           ON c.id = mc.category_id
     WHERE ${where.join(' AND ')}
@@ -198,12 +219,17 @@ exports.getGastosPorCategoria = async ({ anio, mes, bankId }) => {
   }));
 };
 
-exports.getMovimientos = async ({ anio, bankId, categoriaId, tipo, limit = 500, offset = 0 }) => {
+exports.getMovimientos = async ({ anio, communityId, bankId, categoriaId, tipo, limit = 500, offset = 0 }) => {
+  if (bankId) await assertBankAccountInCommunity({ bankAccountId: bankId, communityId });
+
   const params = [];
   let idx = 1;
 
-  let where = `WHERE EXTRACT(YEAR FROM m.movement_date) = $${idx++}`;
-  params.push(anio);
+  let where = `
+    WHERE EXTRACT(YEAR FROM m.movement_date) = $${idx++}
+      AND ba.community_id = $${idx++}
+  `;
+  params.push(anio, communityId);
 
   if (bankId) {
     where += ` AND m.bank_account_id = $${idx++}`;
@@ -238,6 +264,7 @@ exports.getMovimientos = async ({ anio, bankId, categoriaId, tipo, limit = 500, 
       c.id   AS categoria_id,
       c.name AS categoria
     FROM bank_movement m
+    JOIN bank_account ba ON ba.id = m.bank_account_id
     LEFT JOIN movement_category mc ON mc.movement_id = m.id
     LEFT JOIN category c           ON c.id = mc.category_id
     ${where}
@@ -255,8 +282,6 @@ exports.getMovimientos = async ({ anio, bankId, categoriaId, tipo, limit = 500, 
     bank_account_id: x.bank_account_id,
     movement_date: x.movement_date,
     description: x.description,
-    reference1: x.reference1,
-    reference2: x.reference2,
     amount: Number(x.amount),
     balance_after: Number(x.balance_after),
     categoria_id: x.categoria_id,
@@ -264,17 +289,20 @@ exports.getMovimientos = async ({ anio, bankId, categoriaId, tipo, limit = 500, 
   }));
 };
 
-exports.getBancos = async () => {
+exports.getBancos = async ({ communityId }) => {
   const r = await db.query(`
-    SELECT id, name, bank_name, currency
+    SELECT id, name, bank_name, currency, alias, account_number
     FROM bank_account
+    WHERE community_id = $1
     ORDER BY id
-  `);
+  `, [communityId]);
 
   return r.rows.map(x => ({
     id: x.id,
     name: x.name || x.bank_name,
     bank_name: x.bank_name,
     currency: x.currency,
+    alias: x.alias,
+    account_number: x.account_number
   }));
 };

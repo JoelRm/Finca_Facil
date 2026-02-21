@@ -8,6 +8,7 @@ const paymentsRoutes = require('./payments.routes');
 const authRoutes = require('./auth.routes');
 const bankRoutes = require('./bank.routes');
 const demoRoutes = require('./demo.routes');
+const communitiesRoutes = require('./communities.routes');
 
 router.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -21,5 +22,6 @@ router.use('/payments', paymentsRoutes);
 
 router.use('/', bankRoutes);
 router.use('/', demoRoutes);
+router.use('/', communitiesRoutes);
 
 module.exports = router;
