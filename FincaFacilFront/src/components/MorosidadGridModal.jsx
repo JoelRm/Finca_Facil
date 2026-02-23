@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import Sidebar from "../components/Sidebar";
-import { getCommunityOwnersMonthly } from "../api/ownersMonthly";
+import { getCommunityOwnersMonthly } from "../ownersMonthly";
 
 import { Home, Settings, ThumbsUp, ThumbsDown, ArrowLeft, X } from "lucide-react";
 
@@ -80,7 +80,7 @@ function TotalThumb({ type = "up", amount }) {
    API: Allocate
    ========================= */
 async function postAllocateUnidentified({ communityId, anio, sourceMes, targetMes, clientId, delta }) {
-  const r = await fetch(`${API_BASE}/api/payments/unidentified/allocate`, {
+  const r = await fetch(`${API_BASE}/payments/unidentified/allocate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

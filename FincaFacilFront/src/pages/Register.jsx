@@ -34,7 +34,7 @@ export default function Register() {
     (async () => {
       try {
         setLoadingCommunities(true);
-        const data = await apiGet('/api/communities');
+        const data = await apiGet('/communities');
 
         // tu API retorna: { ok, total, communities: [...] }
         const list = Array.isArray(data?.communities) ? data.communities : [];

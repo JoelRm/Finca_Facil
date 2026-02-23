@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     if (!email) throw new Error('Debes ingresar correo');
 
-    const data = await apiPost('/api/auth/login', { email });
+    const data = await apiPost('/auth/login', { email });
 
     if (!data?.ok) throw new Error('No se pudo iniciar sesión');
     if (data.userExists === false) throw new Error('Usuario no existe. Regístrate primero.');
@@ -68,7 +68,7 @@ export function AuthProvider({ children }) {
     if (!email) throw new Error('Debes ingresar correo');
     if (!communityId || Number(communityId) <= 0) throw new Error('communityId es obligatorio');
 
-    const data = await apiPost('/api/auth/register', {
+    const data = await apiPost('/auth/register', {
       email,
       communityId: Number(communityId),
     });
